@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <string>
 #include "types.h"
 
 class KMeans
@@ -11,10 +12,10 @@ private:
     std::vector<int> count;
     int centroidCount;
 
-    void assignClusters();
-
 public:
     KMeans(const std::vector<std::pair<double, double>>);
     void initCentroids(int);
-    void assignClusters(int);
+    void computeClusters();
+    void classify();
+    void writePointsToCSV(const std::string &);
 };

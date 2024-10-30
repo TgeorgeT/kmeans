@@ -40,5 +40,6 @@ std::vector<std::pair<double, double>> CSVParser::parseCSV()
         }
         points.emplace_back(x, y);
     }
+    file.close();
     return points;
 };
