@@ -1,4 +1,3 @@
-
 #include "../include/CSVParser.h"
 
 #include <vector>
@@ -6,7 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-std::vector<std::pair<double, double>> CSVParser::parseCSV()
+
+std::vector<std::pair<double, double>> CSVParser::parse_csv()
 {
     std::vector<std::pair<double, double>> points;
     std::ifstream file(this->path);
@@ -18,28 +18,29 @@ std::vector<std::pair<double, double>> CSVParser::parseCSV()
     }
 
     std::string line;
-
     double x, y;
     char comma;
-    bool first = 1;
+    bool first = true;
+
     while (std::getline(file, line))
     {
-        if (first == true)
+        if (first)
         {
             first = false;
             continue;
         }
 
-        std::istringstream lineStream(line);
+        std::istringstream line_stream(line);
+        line_stream >> x >> comma >> y;
 
-        lineStream >> x >> comma >> y;
-        if (lineStream.fail())
+        if (line_stream.fail())
         {
             std::cerr << "Failed reading line: " << line << "\n";
-            lineStream.clear();
+            line_stream.clear();
         }
         points.emplace_back(x, y);
     }
+
     file.close();
     return points;
-};
+}

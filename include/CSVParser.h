@@ -9,5 +9,5 @@ private:
 
 public:
     CSVParser(const std::string &path) : path(path) {}
-    std::vector<std::pair<double, double>> parseCSV();
+    std::vector<std::pair<double, double>> parse_csv();
 };
