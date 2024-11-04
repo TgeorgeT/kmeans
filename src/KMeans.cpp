@@ -15,24 +15,25 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "../include/types.h"
-
-KMeans::KMeans(const std::vector<std::pair<double, double>> points)
+KMeans::KMeans(const std::vector<std::pair<double, double>> points, size_t centroid_count)
 {
     this->points_size = points.size();
-    this->points_x = static_cast<double *>(std::aligned_alloc(32, points.size() * sizeof(double)));
-    this->points_y = static_cast<double *>(std::aligned_alloc(32, points.size() * sizeof(double)));
-    this->assigned_cluster = static_cast<int32_t *>(std::aligned_alloc(32, points.size() * sizeof(int32_t)));
-    memset(this->assigned_cluster, -1, sizeof(this->assigned_cluster));
-}
-
-void KMeans::init_centroids(int centroid_count)
-{
     this->centroid_count = centroid_count;
 
-    if (sizeof(this->points_x) < centroid_count)
+    if (this->points_size < centroid_count)
     {
         throw std::runtime_error("Number of points must be at least centroid count.");
+    }
+
+    this->points_x = static_cast<double *>(std::aligned_alloc(32, points.size() * sizeof(double)));
+    this->points_y = static_cast<double *>(std::aligned_alloc(32, points.size() * sizeof(double)));
+    this->assigned_cluster = new int32_t[this->points_size];
+
+    for (size_t i = 0; i < this->points_size; ++i)
+    {
+        this->points_x[i] = points[i].first;
+        this->points_y[i] = points[i].second;
+        this->assigned_cluster[i] = -1;
     }
 
     this->centroids_x = static_cast<double *>(std::aligned_alloc(32, centroid_count * sizeof(double)));
@@ -46,6 +47,17 @@ void KMeans::init_centroids(int centroid_count)
         this->centroids_x[i] = this->points_x[i];
         this->centroids_y[i] = this->points_y[i];
     }
+}
+
+KMeans::~KMeans()
+{
+    delete[] this->sum_x;
+    delete[] this->sum_y;
+    delete[] this->points_x;
+    delete[] this->points_y;
+    delete[] this->centroids_x;
+    delete[] this->centroids_y;
+    delete[] this->assigned_cluster;
 }
 
 void KMeans::compute_clusters()
@@ -81,9 +93,9 @@ void KMeans::classify()
     while (should_iterate)
     {
         should_iterate = 0;
-        memset(this->sum_x, 0, sizeof(sum_x));
-        memset(this->sum_y, 0, sizeof(sum_y));
-        memset(this->count, 0, sizeof(count));
+        std::fill(this->sum_x, this->sum_x + this->centroid_count, 0);
+        std::fill(this->sum_y, this->sum_y + this->centroid_count, 0);
+        std::fill(this->count, this->count + this->centroid_count, 0);
 
         this->compute_clusters();
 
@@ -103,22 +115,18 @@ void KMeans::classify()
     }
 }
 
-void KMeans::compute_clusters_parallel()
+void KMeans::compute_clusters_multithreaded()
 {
-    size_t points_size = this->points.size();
-    bool should_iterate = 0;
-
     unsigned int thread_count = std::thread::hardware_concurrency();
-    unsigned int chunk_size = points_size / thread_count;
+    unsigned int chunk_size = this->points_size / thread_count;
 
     std::vector<std::thread> threads;
 
-    for (size_t i = 0; i < points_size; i += chunk_size)
+    for (size_t i = 0; i < this->points_size; i += chunk_size)
     {
         threads.push_back(
-            std::thread([this, i, &should_iterate, chunk_size, points_size]()
+            std::thread([this, i, chunk_size]()
                         {
-            bool local_should_iterate = 0;
             std::vector<double> local_sum_x = std::vector<double>(centroid_count), local_sum_y = std::vector<double>(centroid_count);
             std::vector<size_t> local_count = std::vector<size_t>(centroid_count);
             size_t j = find_minimum(i + chunk_size, points_size);
@@ -130,24 +138,22 @@ void KMeans::compute_clusters_parallel()
 
                 for (int j = 0; j < this->centroid_count; j++)
                 {
-                    double distance = euclidean_distance(this->points[k], this->centroids[j]);
+                    double distance = euclidean_distance(this->points_x[k], this->points_y[k], this->centroids_x[j], this->centroids_y[j]);
                     double new_min_dist = find_minimum(min_dist, distance);
 
                     uint64_t mask = -static_cast<int64_t>(new_min_dist == distance);
+
                     min_dist = new_min_dist;
                     cluster = (mask & j) | (~mask & cluster);
                 }
+                this->assigned_cluster[k]=cluster;
 
-                local_should_iterate |= (cluster != this->points[k].cluster);
-                this->points[k].cluster = cluster;
-
-                local_sum_x[cluster] += this->points[k].x;
-                local_sum_y[cluster] += this->points[k].y;
+                local_sum_x[cluster] += this->points_x[k];
+                local_sum_y[cluster] += this->points_y[k];
                 local_count[cluster] += 1;
             }
             {
                 std::lock_guard<std::mutex> lock(this->mu);
-                should_iterate |= local_should_iterate;
                 for (int j = 0; j < this->centroid_count; j++)
                 {
                     this->sum_x[j] += local_sum_x[j];
@@ -170,7 +176,7 @@ void KMeans::compute_clusters_parallel()
     }
 }
 
-void KMeans::classify_parallel()
+void KMeans::classify_multithreaded()
 {
     bool should_iterate = 1;
     double tolerance = 1e-4;
@@ -178,11 +184,11 @@ void KMeans::classify_parallel()
     while (should_iterate)
     {
         should_iterate = 0;
-        memset(this->sum_x, 0, sizeof(sum_x));
-        memset(this->sum_y, 0, sizeof(sum_y));
-        memset(this->count, 0, sizeof(count));
+        std::fill(this->sum_x, this->sum_x + this->centroid_count, 0);
+        std::fill(this->sum_y, this->sum_y + this->centroid_count, 0);
+        std::fill(this->count, this->count + this->centroid_count, 0);
 
-        this->compute_clusters_parallel();
+        this->compute_clusters_multithreaded();
 
         for (int i = 0; i < this->centroid_count; i++)
         {
@@ -200,9 +206,8 @@ void KMeans::classify_parallel()
     }
 }
 
-void KMeans::compute_clusters_parallel_with_simd()
+void KMeans::compute_clusters_multithreaded_with_simd()
 {
-    size_t points_size = this->points.size();
     bool should_iterate = 0;
 
     unsigned int thread_count = std::thread::hardware_concurrency();
@@ -210,10 +215,10 @@ void KMeans::compute_clusters_parallel_with_simd()
 
     std::vector<std::thread> threads;
 
-    for (size_t i = 0; i < points_size; i += chunk_size)
+    for (size_t i = 0; i < this->points_size; i += chunk_size)
     {
         threads.push_back(
-            std::thread([this, i, &should_iterate, chunk_size, points_size]()
+            std::thread([this, i, &should_iterate, chunk_size]()
                         {
                 std::vector<double> local_sum_x(this->centroid_count, 0.0);
                 std::vector<double> local_sum_y(this->centroid_count, 0.0);
@@ -234,7 +239,6 @@ void KMeans::compute_clusters_parallel_with_simd()
                         __m256d centroid_x = _mm256_loadu_pd(&(this->centroids_x[j]));
                         __m256d centroid_y = _mm256_loadu_pd(&(this->centroids_y[j]));
 
-                        // Calculate squared differences
                         __m256d dx = _mm256_sub_pd(point_x, centroid_x);
                         __m256d dy = _mm256_sub_pd(point_y, centroid_y);
                         __m256d dist_squared = _mm256_add_pd(_mm256_mul_pd(dx, dx), _mm256_mul_pd(dy, dy));
@@ -254,7 +258,6 @@ void KMeans::compute_clusters_parallel_with_simd()
                         cluster = (min_mask & (j + position)) | (~min_mask & cluster);
                     }
 
-                    // Handle remaining centroids
                     for (; j < this->centroid_count; ++j) {
                         double new_potential_min = euclidean_distance(points_x[k], points_y[k], centroids_x[j], centroids_y[j]);
                         min_dist = find_minimum(min_dist, new_potential_min);
@@ -264,12 +267,11 @@ void KMeans::compute_clusters_parallel_with_simd()
                     }
 
                     this->assigned_cluster[k] = cluster;
-                    local_sum_x[cluster] += this->points[k].x;
-                    local_sum_y[cluster] += this->points[k].y;
+                    local_sum_x[cluster] += this->points_x[k];
+                    local_sum_y[cluster] += this->points_y[k];
                     local_count[cluster]++;
                 }
 
-                // Lock for safe aggregation of results
                 {
                     std::lock_guard<std::mutex> lock(this->mu);
                     for (int j = 0; j < this->centroid_count; ++j) {
@@ -280,7 +282,6 @@ void KMeans::compute_clusters_parallel_with_simd()
                 } }));
     }
 
-    // Join threads
     for (std::thread &thread : threads)
     {
         if (thread.joinable())
@@ -294,7 +295,7 @@ void KMeans::compute_clusters_parallel_with_simd()
     }
 }
 
-void KMeans::classify_parallel_with_simd()
+void KMeans::classify_multithreaded_with_simd()
 {
     bool should_iterate = 1;
     double tolerance = 1e-4;
@@ -302,11 +303,11 @@ void KMeans::classify_parallel_with_simd()
     while (should_iterate)
     {
         should_iterate = 0;
-        memset(this->sum_x, 0, sizeof(sum_x));
-        memset(this->sum_y, 0, sizeof(sum_y));
-        memset(this->count, 0, sizeof(count));
+        std::fill(this->sum_x, this->sum_x + this->centroid_count, 0);
+        std::fill(this->sum_y, this->sum_y + this->centroid_count, 0);
+        std::fill(this->count, this->count + this->centroid_count, 0);
 
-        this->compute_clusters_parallel_with_simd();
+        this->compute_clusters_multithreaded_with_simd();
 
         for (int i = 0; i < this->centroid_count; i++)
         {
@@ -336,12 +337,7 @@ void KMeans::write_points_to_csv(const std::string &path)
 
     file << "X,Y,cluster\n";
 
-    // for (const Point &point : this->points)
-    // {
-    //     file << point.x << "," << point.y << "," << point.cluster << "\n";
-    // }
-
-    for (size_t i = 0; i < points.size(); ++i)
+    for (size_t i = 0; i < this->points_size; ++i)
     {
         file << this->points_x[i] << "," << this->points_y[i] << "," << this->assigned_cluster[i] << "\n";
     }
