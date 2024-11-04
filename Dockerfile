@@ -1,32 +1,28 @@
 
-FROM ubuntu:20.04
+FROM  python:3.11.10-bookworm
 
 USER root
 
-    
+
 RUN export DEBIAN_FRONTEND=noninteractive && \
-           apt-get update && \
-           apt-get install -y build-essential \
-                                         git \
-                                         net-tools \
-                                         arp-scan \
-                                         tcpdump \
-                                         ethtool \
-                                         nmap \
-                                         netcat \
-                                         traceroute \
-                                         iputils-ping \
-                                         dnsutils \
-                                         iptables \
-                                         iproute2 \
-                                         telnet \
-                                         libnetfilter-queue-dev \
-                                         python3 \
-                                         python3-pip \
-                                         python3-dev \
-                                         build-essential \
-					 valgrind
-                                    
+    apt-get update && \
+    apt-get install -y build-essential \
+    git \
+    net-tools \
+    arp-scan \
+    tcpdump \
+    ethtool \
+    nmap \
+    traceroute \
+    iputils-ping \
+    dnsutils \
+    iptables \
+    iproute2 \
+    telnet \
+    libnetfilter-queue-dev \
+    build-essential \
+    valgrind
+
 WORKDIR /home/kmeans
 
 COPY . .

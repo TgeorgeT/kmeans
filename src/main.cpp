@@ -13,7 +13,7 @@ int main()
     kmeans.init_centroids(CENTROID_COUNT);
 
     auto start = std::chrono::high_resolution_clock::now();
-    kmeans.classify_parallel();
+    kmeans.classify();
     auto stop = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
     double seconds = duration.count() / 1000.0;

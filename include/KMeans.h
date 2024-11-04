@@ -11,8 +11,11 @@ private:
     std::vector<Point> points;
     std::vector<Point> centroids;
 
-    std::vector<double> sum_x, sum_y;
-    std::vector<size_t> count;
+    double *sum_x, *sum_y;
+    size_t *count, points_size;
+
+    double *points_x, *points_y, *centroids_x, *centroids_y;
+    int32_t *assigned_cluster;
 
     std::mutex mu;
     int centroid_count;
@@ -24,5 +27,7 @@ public:
     void compute_clusters_parallel();
     void classify();
     void classify_parallel();
+    void compute_clusters_parallel_with_simd();
+    void classify_parallel_with_simd();
     void write_points_to_csv(const std::string &);
 };
